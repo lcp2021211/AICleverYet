@@ -197,6 +197,8 @@ AICleverYet/
 
 项目代码使用 [MIT License](LICENSE)。感谢 [Codex Radar](https://codexradar.com) 提供公开评测数据。测试样本与截图的数据来源说明见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
+每个版本的改动见 [更新记录](CHANGELOG.md)。
+
 <div align="center">
 
 **少猜一个档位，多看一眼数据。** ✦
