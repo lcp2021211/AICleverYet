@@ -18,6 +18,24 @@
 
 固定样本测试应能离线通过。真实接口测试是可选检查，不应成为日常开发的强制联网要求。
 
+## 提交与合并
+
+提交信息和 PR 标题采用 Conventional Commits 格式：
+
+```text
+<type>(<scope>): <description>
+```
+
+常用类型为 `feat`（功能）、`fix`（修复）、`docs`（文档）、`refactor`（重构）、`test`（测试）和 `chore`（维护）。scope 可省略；描述应简洁、具体，不写模糊的“update”或“修改”。例如：
+
+```text
+feat(ui): add harness cards and hover IQ trends
+fix(cache): refresh legacy history only when panel opens
+docs(release): document v1.1.0 changes and commit conventions
+```
+
+从功能分支提交 PR，遵循 `main` 的保护规则；合并提交也使用上述格式。不要为修改历史提交说明而强推已发布分支。
+
 ## 保持这些约定
 
 - 启动、后台、睡眠唤醒不发起请求；打开面板或主动刷新才联网。
