@@ -33,15 +33,20 @@ func unwrap<T>(_ a: T?) throws -> T {
 @main struct Runner {
     @MainActor static func main() async {
         let checks = RadarChecks()
-        let cases: [(String, () async throws -> Void)] = [
+        var cases: [(String, () async throws -> Void)] = [
             ("Real JSON / exact effort history", { try checks.testRealPayloadAndExactEffortHistory() }),
             ("Delta timestamps / sparse history", { checks.testHistoryDeltaUsesTimestampAndRequiresCoverage() }),
             ("No startup traffic / deduplication / independent TTLs", { try await checks.testNoStartupOrClosedRequestsAndIndependentTTLs() }),
             ("Close cancels / late response rejected", { try await checks.testClosingCancelsAndRejectsLateResult() }),
             ("Partial failure / offline disk cache", { try await checks.testPartialFailureKeepsCurrentAndDiskCacheSurvivesOffline() }),
             ("Selection is local / explicit refresh", { try await checks.testSelectionDoesNotFetchAndManualRefreshIsExplicit() }),
-            ("Live API", { try await checks.testLiveAPIWhenRequested() })
+            ("Harness mapping / insufficient samples / DSH history", { try checks.testHarnessMappingAndInsufficientSamples() }),
+            ("Local harness switching / unavailable rows / per-harness memory", { try await checks.testHarnessSwitchingIsLocalAndKeepsUnavailableRows() }),
+            ("Legacy cache upgrade without startup traffic", { try await checks.testLegacyHistoryCacheRefreshesOnlyAfterOpening() })
         ]
+        if ProcessInfo.processInfo.environment["GPT_IQ_LIVE_TEST"] == "1" {
+            cases.append(("Live API", { try await checks.testLiveAPIWhenRequested() }))
+        }
         for (name, run) in cases {
             let before = Results.failures
             do { try await run() }

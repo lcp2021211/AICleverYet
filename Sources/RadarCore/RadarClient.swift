@@ -32,14 +32,14 @@ public actor RadarClient: RadarFetching {
 
     public func efficiency() async throws -> Efficiency {
         let result: Efficiency = try await fetch("intelligence-efficiency")
-        guard !result.gptPoints.isEmpty else { throw RadarError.invalid }
+        guard !result.availablePoints.isEmpty else { throw RadarError.invalid }
         return result
     }
 
     public func history() async throws -> History {
         let result: History = try await fetch("iq-history")
-        // Retain only GPT effort series. No need to store the full leaderboard.
-        return result.filter { $0.key.hasPrefix("gpt-") && $0.key.contains("@") }
+        // Retain all harnesses, but never mix aggregate or latest: series into trends.
+        return result.filter { !$0.key.hasPrefix("latest:") && $0.key.contains("@") }
             .mapValues { $0.filter { (0...150).contains($0.score) && ($0.n ?? 0) > 0 } }
     }
 
@@ -47,7 +47,7 @@ public actor RadarClient: RadarFetching {
         let url = URL(string: "https://api.codexradar.com/api/v1/\(endpoint)")!
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("GPTIQ/1.0 (macOS)", forHTTPHeaderField: "User-Agent")
+        request.setValue("AICleverYet/1.1 (macOS)", forHTTPHeaderField: "User-Agent")
         // Streaming enforces the limit before an unexpectedly large response is buffered.
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw RadarError.invalid }

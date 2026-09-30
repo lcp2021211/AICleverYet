@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "GPTIQ",
+    name: "AICleverYet",
     platforms: [.macOS(.v13)],
-    products: [.executable(name: "GPTIQ", targets: ["GPTIQ"]), .executable(name: "RadarChecks", targets: ["RadarChecks"])],
+    products: [.executable(name: "AICleverYet", targets: ["AICleverYet"]), .executable(name: "RadarChecks", targets: ["RadarChecks"])],
     targets: [
         .target(name: "RadarCore"),
-        .executableTarget(name: "GPTIQ", dependencies: ["RadarCore"]),
+        .executableTarget(name: "AICleverYet", dependencies: ["RadarCore"]),
         .executableTarget(name: "RadarChecks", dependencies: ["RadarCore"], path: "Tests/RadarCoreTests",
                     resources: [.copy("Fixtures")])
     ]

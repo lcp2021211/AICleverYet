@@ -7,11 +7,11 @@
 | [`intelligence-efficiency`](https://api.codexradar.com/api/v1/intelligence-efficiency) | 按模型、推理强度读取当前 IQ、成本、耗时、样本量与评测更新时间 |
 | [`iq-history`](https://api.codexradar.com/api/v1/iq-history) | 读取同一模型、同一推理强度的历史序列 |
 
-目前不调用 leaderboard 或 benchmarks 接口。仅展示接口返回的有效 GPT 档位，不对缺失模型补造数据。
+目前不调用 leaderboard 或 benchmarks 接口。保留接口返回的所有模型与档位，包括空分数。API v3 未返回 harness 字段；分组参考 [众测雷达前端](https://deng.codexradar.com) 的模型映射：GPT 与无 DSH 前缀的 DeepSeek → Codex；Claude → Claude Code；dsh- 前缀 → DSH；K3 / Kimi → Kimi Code；GLM → ZCode；Grok → Grok；Gemini → Antigravity；HY4 → CodeBuddy；kiro- 前缀 → Kiro。若接口将来提供明确的 harness 字段则优先使用，未识别分组进入“其他”。
 
 ## 分数与历史口径
 
-当前 IQ 直接使用 `points[].iq`，按 `model` 与 `effort` 匹配。最高分标记在同一模型内比较；分数并列时，相应行都可显示皇冠。
+当前 IQ 直接使用 `points[].iq`，按 `model` 与 `effort` 匹配。最高分在同一模型内比较；只有分数有效且 total 至少为 30 的档位参与，最高分行的名称与 IQ 均加粗并以蓝色强调。并列最高时全部强调。少于 30 份样本或空分数显示“数据不足”，悬停分数区域可查看原因与原始 IQ。30 份是本 App 的保守展示门槛，不是 API 返回的可靠性标记。
 
 历史只读取 `模型@推理强度`，不回退到模型汇总或 `latest:` 序列。过滤空分数、无效分数和没有样本的记录，同一时间戳去重后排序。
 
@@ -21,9 +21,9 @@
 - 选取离目标时间最近的样本，最大允许偏差 65 分钟。
 - 偏差超过 15 分钟，显示 `≈`；超出允许范围或没有足够样本，显示“样本不足”。
 - 例如每小时一条、共 168 条记录，跨度通常约 167 小时，因此可能显示 `≈ 7d`。
-- 记录时间会显示在曲线下方。曲线不补齐缺失数据，不外推未来。
+- 每行的小曲线图标悬浮或点击时展示历史。横坐标包含五组日期与时间刻度；移动到图内可读出最近样本的完整时间和 IQ。未采样的时刻没有生成新数据，已有采样点之间以折线连接，不外推未来。
 
-成本直接使用 `average_price_usd`，当前 API 的 `price_aggregation` 为 `median`，UI 按 USD 中位数 / 评测说明。耗时使用 `average_minutes`，单位为分钟 / 评测。这些数字不等于每百万 token 价格或日常聊天耗时。如果上游统计口径变化，UI 说明也需要相应调整。
+成本直接使用 `average_price_usd`，当前 API 的 `price_aggregation` 为 `median`，UI 列标题以 $ 表示美元，说明在文档与悬停提示中提供。耗时使用 `average_minutes`，单位为分钟 / 评测。这些数字不等于每百万 token 价格或日常聊天耗时。如果上游统计口径变化，UI 说明也需要相应调整。
 
 ## 请求生命周期
 
@@ -45,14 +45,16 @@
 
 请求使用 ephemeral URLSession，不设置认证或 Cookie，不使用后台会话。最多并发两项请求，请求超时 12 秒、资源超时 18 秒；单个响应限制为 4 MiB，不自动重试。系统处理 HTTP 内容压缩。
 
-2026-09-30 检查时，未压缩的当前数据约 55 KB，完整历史响应约 1.47 MB。体积随上游数据变化；历史解码后只保留 GPT 的档位序列。
+2026-09-30 检查时，未压缩的当前数据约 55 KB，完整历史响应约 1.47 MB。体积随上游数据变化；历史解码后保留各 harness 的档位序列，剔除模型汇总和 latest: 序列。
 
 ## 本地保存什么？
 
 - 缓存路径：`~/Library/Caches/com.local.gptiq/snapshot.json`。
-- 缓存包含上次成功的当前数据、GPT 历史与两类获取时间。
-- 选择的模型及档位通过 UserDefaults 保存。
+- 缓存包含上次成功的当前数据、各 harness 历史与两类获取时间。
+- 各 harness 选择的模型及档位通过 UserDefaults 保存。
 - 数据缓存写入失败不会阻止实时展示；网络失败不会覆盖上次成功结果。
 - 无遥测、无聊天内容采集、无开机自启注册。
 
-菜单栏中的分数始终是**上次获取值**。悬停可查看获取时间；面板分别显示获取时间和所选档位的评测更新时间。
+菜单栏只显示图标，不展示 IQ。面板不再显示获取时间或评测更新时间；离线时明确提示“离线快照”。历史浮层仍显示样本时间。
+
+为了保留旧版用户的缓存与偏好，应用更名后继续使用 `com.local.gptiq` bundle identifier 和缓存目录；旧版仅含 GPT 的历史缓存会在下一次打开面板时重新请求升级。

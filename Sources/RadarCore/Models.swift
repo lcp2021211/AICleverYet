@@ -4,6 +4,11 @@ public struct Efficiency: Codable, Sendable {
     public var sourceUpdatedAt: Date?
     public var points: [ModelPoint]
 
+    // Keep ungraded rows: hiding them would make an available harness disappear.
+    public var availablePoints: [ModelPoint] {
+        points.filter { !$0.model.isEmpty && !$0.effort.isEmpty }
+    }
+
     public var gptPoints: [ModelPoint] {
         points.filter { $0.model.lowercased().hasPrefix("gpt-") && $0.iq?.isFinite == true && ($0.total ?? 0) > 0 }
     }
@@ -19,9 +24,82 @@ public struct ModelPoint: Codable, Identifiable, Sendable {
     public var priceAggregation: String?
     public var averageMinutes: Double?
     public var sourceUpdatedAt: Date?
+    public var harness: String?
     public var id: String { model + "@" + effort }
-    public var displayName: String { model.replacingOccurrences(of: "gpt-", with: "GPT-") }
+    public var harnessKind: Harness { Harness.resolve(model: model, explicit: harness) }
+    public var displayName: String {
+        var label = model
+        for prefix in ["dsh-", "kiro-"] where label.hasPrefix(prefix) { label = String(label.dropFirst(prefix.count)) }
+        return label.replacingOccurrences(of: "gpt-", with: "GPT-")
+            .replacingOccurrences(of: "claude-", with: "Claude ")
+            .replacingOccurrences(of: "deepseek-", with: "DeepSeek ")
+            .replacingOccurrences(of: "gemini-", with: "Gemini ")
+            .replacingOccurrences(of: "glm-", with: "GLM-")
+            .replacingOccurrences(of: "grok-", with: "Grok ")
+            .replacingOccurrences(of: "kimi-", with: "Kimi ")
+    }
     public var effortName: String { effort.uppercased() }
+    public var hasScore: Bool { iq.map { $0.isFinite && (0...150).contains($0) } == true && (total ?? 0) > 0 }
+    // A local comparison guard, not a claim of statistical significance or an API flag.
+    public static let minimumSamples: Double = 30
+    public var isRankable: Bool { hasScore && (total ?? 0) >= Self.minimumSamples }
+    public var qualityNote: String {
+        if !hasScore { return "尚无有效评分；等待更多评测。" }
+        if !isRankable { return "仅 \(Int(total ?? 0)) 份样本；本 App 以至少 30 份样本作为参与最高分比较的门槛。原始 IQ：\(String(format: "%.2f", iq!))。" }
+        return "\(Int(total ?? 0)) 份评测样本。IQ 为 Codex Radar 评测分数。"
+    }
+}
+
+public enum Harness: String, CaseIterable, Identifiable, Sendable {
+    case codex, claudeCode, dsh, kimiCode, zcode, grok, antigravity, codebuddy, kiro, other
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .codex: return "Codex"
+        case .claudeCode: return "Claude Code"
+        case .dsh: return "DSH"
+        case .kimiCode: return "Kimi Code"
+        case .zcode: return "ZCode"
+        case .grok: return "Grok"
+        case .antigravity: return "Antigravity"
+        case .codebuddy: return "CodeBuddy"
+        case .kiro: return "Kiro"
+        case .other: return "其他"
+        }
+    }
+    public var symbol: String {
+        switch self {
+        case .codex: return "terminal"
+        case .claudeCode: return "asterisk"
+        case .dsh: return "water.waves"
+        case .kimiCode: return "moon.stars"
+        case .zcode: return "bolt"
+        case .grok: return "sparkle"
+        case .antigravity: return "paperplane"
+        case .codebuddy: return "person.2"
+        case .kiro: return "cube.transparent"
+        case .other: return "square.grid.2x2"
+        }
+    }
+    public static func resolve(model: String, explicit: String? = nil) -> Harness {
+        if let explicit, !explicit.isEmpty {
+            let known: [String: Harness] = ["codex": .codex, "claude-code": .claudeCode,
+                "dsh": .dsh, "kimi-code": .kimiCode, "zcode": .zcode, "grok": .grok,
+                "grok-build": .grok, "antigravity": .antigravity, "codebuddy": .codebuddy, "kiro": .kiro]
+            return known[explicit.lowercased()] ?? .other
+        }
+        // API v3 has no harness field. These model mappings follow deng.codexradar.com.
+        if model.hasPrefix("kiro-") { return .kiro }
+        if model.hasPrefix("dsh-") { return .dsh }
+        if model.hasPrefix("claude-") { return .claudeCode }
+        if model.hasPrefix("gpt-") || model.hasPrefix("deepseek-") { return .codex }
+        if model == "k3" || model.hasPrefix("kimi-") { return .kimiCode }
+        if model.hasPrefix("glm-") { return .zcode }
+        if model.hasPrefix("grok-") { return .grok }
+        if model.hasPrefix("gemini-") { return .antigravity }
+        if model == "hy4-preview" { return .codebuddy }
+        return .other
+    }
 }
 
 public struct HistoryPoint: Codable, Identifiable, Sendable {

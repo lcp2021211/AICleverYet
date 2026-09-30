@@ -3,7 +3,7 @@ import SwiftUI
 import RadarCore
 
 @main
-struct GPTIQApp {
+struct AICleverYetApp {
     @MainActor static func main() {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -32,9 +32,9 @@ struct GPTIQApp {
             NSApp.terminate(nil)
             return
         }
-        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "waveform.path", accessibilityDescription: "GPT IQ")
+            button.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "AICleverYet")
             button.image?.isTemplate = true
             button.imagePosition = .imageLeading
             button.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
@@ -50,14 +50,9 @@ struct GPTIQApp {
     }
 
     private func updateLabel() {
-        if let point = store.selected, let iq = point.iq {
-            item.button?.title = String(format: " %.1f", iq)
-            let date = store.currentFetchedAt?.formatted(date: .abbreviated, time: .shortened) ?? "未知"
-            item.button?.toolTip = "\(point.displayName) · \(point.effortName) · IQ \(iq)\n最近获取：\(date)\n点击查看并更新"
-        } else {
-            item.button?.title = " IQ"
-            item.button?.toolTip = "GPT IQ · 点击获取"
-        }
+        item.button?.title = ""
+        item.button?.toolTip = "AICleverYet · 点击探索各个 harness"
+        item.button?.setAccessibilityLabel("AICleverYet")
     }
 
     @objc private func toggle() {
