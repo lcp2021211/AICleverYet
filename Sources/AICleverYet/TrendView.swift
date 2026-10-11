@@ -2,16 +2,19 @@ import SwiftUI
 import Charts
 import RadarCore
 
+// Disambiguate the legacy property wrapper from the SDK's newer State macro.
+private typealias ViewState<Value> = SwiftUI.State<Value>
+
 struct TrendTrigger: View {
     let point: ModelPoint
     let series: [HistoryPoint]
     let loading: Bool
     let error: String?
     let panelOpen: Bool
-    @State private var presented = false
-    @State private var triggerHovered = false
-    @State private var cardHovered = false
-    @State private var dismissal: Task<Void, Never>?
+    @ViewState<Bool> private var presented = false
+    @ViewState<Bool> private var triggerHovered = false
+    @ViewState<Bool> private var cardHovered = false
+    @ViewState<Task<Void, Never>?> private var dismissal: Task<Void, Never>?
     @Environment(\.colorScheme) private var scheme
     private var accent: Color { scheme == .dark ? Color(red: 0.52, green: 0.7, blue: 1) : radarBlue }
 
@@ -25,7 +28,7 @@ struct TrendTrigger: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("查看 \(point.effortName) IQ 趋势")
+        .accessibilityLabel("查看 \(point.effortName) \(point.scoreLabel)趋势")
         .onHover { inside in
             triggerHovered = inside
             if inside && panelOpen { dismissal?.cancel(); presented = true }
@@ -59,13 +62,17 @@ struct TrendCard: View {
     let series: [HistoryPoint]
     var loading = false
     var error: String?
-    @State private var cursor: HistoryPoint?
+    @ViewState<HistoryPoint?> private var cursor: HistoryPoint?
     @Environment(\.colorScheme) private var scheme
     private var accent: Color { scheme == .dark ? Color(red: 0.52, green: 0.7, blue: 1) : radarBlue }
     private var lower: Double { max(0, (series.map(\.score).min() ?? 0) - 1) }
     private var upper: Double { min(150, (series.map(\.score).max() ?? 149) + 1) }
     private var ticks: [Date] {
         guard let first = series.first?.ts, let last = series.last?.ts else { return [] }
+        if point.isBench {
+            let count = min(5, series.count)
+            return (0..<count).map { series[count == 1 ? 0 : $0 * (series.count - 1) / (count - 1)].ts }
+        }
         return (0...4).map { first.addingTimeInterval(last.timeIntervalSince(first) * Double($0) / 4) }
     }
 
@@ -74,27 +81,28 @@ struct TrendCard: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(point.displayName).font(.system(size: 12, weight: .semibold))
-                    Text("\(point.effortName) · IQ 趋势").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                    Text("\(point.effortName) · \(point.scoreLabel)趋势").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text("近 7 天").font(.system(size: 10, weight: .medium)).foregroundStyle(accent)
                     .padding(.horizontal, 9).padding(.vertical, 5).background(accent.opacity(0.09), in: Capsule())
             }
-            if series.count >= 2 {
+            if !series.isEmpty {
                 HStack(spacing: 17) {
-                    delta(hours: 24, title: "24h")
+                    delta(hours: 24, title: point.isBench ? "1d" : "24h")
                     delta(hours: 168, title: "7d")
                     Spacer()
                 }
                 plot.frame(height: 155)
                 HStack {
                     if let sample = cursor ?? series.last {
-                        Text(sample.ts, format: .dateTime.year().month().day().hour().minute())
+                        if point.isBench { Text(utcDay(sample.ts) + " UTC · \(sample.n ?? 0)/64 题") }
+                        else { Text(sample.ts, format: .dateTime.year().month().day().hour().minute()) }
                         Spacer()
-                        Text(String(format: "IQ %.1f", sample.score)).fontWeight(.semibold).foregroundStyle(accent)
+                        Text(String(format: "\(point.scoreLabel) %.1f", sample.score)).fontWeight(.semibold).foregroundStyle(accent)
                     }
                 }.font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
-                Text(error == nil ? "移动到曲线上，看看每个时刻的小起伏。" : "历史缓存 · \(error!)")
+                Text(error == nil ? (point.isBench ? "UTC 每日最后成绩；无判分日留空，非小时趋势。" : "移动到曲线上，看看每个时刻的小起伏。") : "历史缓存 · \(error!)")
                     .font(.system(size: 9)).foregroundStyle(error == nil ? Color.secondary : Color.orange)
             } else {
                 VStack(spacing: 10) {
@@ -103,7 +111,7 @@ struct TrendCard: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity).frame(height: 130)
             }
-            if !point.isRankable {
+            if !point.isRankable || point.isBench {
                 Text(point.qualityNote).font(.system(size: 9)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -120,13 +128,35 @@ struct TrendCard: View {
         }.font(.system(size: 11, design: .rounded)).monospacedDigit()
     }
 
+    private func utcDay(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    private func segment(_ sample: HistoryPoint) -> Int {
+        var group = 0
+        for i in series.indices where i > 0 && series[i].ts <= sample.ts {
+            if series[i].ts.timeIntervalSince(series[i - 1].ts) > 86400 { group += 1 }
+        }
+        return group
+    }
+
     private var plot: some View {
         Chart {
             ForEach(series) { sample in
-                AreaMark(x: .value("时间", sample.ts), yStart: .value("基线", lower), yEnd: .value("IQ", sample.score))
-                    .foregroundStyle(LinearGradient(colors: [accent.opacity(0.2), accent.opacity(0.015)], startPoint: .top, endPoint: .bottom))
-                LineMark(x: .value("时间", sample.ts), y: .value("IQ", sample.score))
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)).foregroundStyle(accent)
+                if point.isBench {
+                    PointMark(x: .value("日期", sample.ts), y: .value("雷达分", sample.score))
+                        .symbolSize(24).foregroundStyle(accent)
+                    LineMark(x: .value("日期", sample.ts), y: .value("雷达分", sample.score), series: .value("连续日期", segment(sample)))
+                        .lineStyle(StrokeStyle(lineWidth: 2)).foregroundStyle(accent)
+                } else {
+                    AreaMark(x: .value("时间", sample.ts), yStart: .value("基线", lower), yEnd: .value("IQ", sample.score))
+                        .foregroundStyle(accent.opacity(0.1))
+                    LineMark(x: .value("时间", sample.ts), y: .value("IQ", sample.score)).foregroundStyle(accent)
+                }
             }
             if let cursor {
                 RuleMark(x: .value("时间", cursor.ts)).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3])).foregroundStyle(accent.opacity(0.45))
@@ -141,8 +171,11 @@ struct TrendCard: View {
                                collisionResolution: .disabled) {
                     if let date = value.as(Date.self) {
                         VStack(spacing: 2) {
+                            if point.isBench { Text(utcDay(date).dropFirst(5)); Text("UTC") }
+                            else {
                             Text(date, format: .dateTime.month(.twoDigits).day(.twoDigits))
                             Text(date, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+                        }
                         }.font(.system(size: 8, design: .monospaced)).foregroundStyle(Color.secondary)
                     }
                 }
@@ -168,6 +201,6 @@ struct TrendCard: View {
                     }
             }
         }
-        .accessibilityLabel("\(point.effortName) 的历史 IQ，共 \(series.count) 个样本，时间轴包含五个日期和时间刻度")
+        .accessibilityLabel("\(point.effortName) 的历史\(point.scoreLabel)，共 \(series.count) 个样本，时间轴标明采样日期")
     }
 }

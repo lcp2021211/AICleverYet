@@ -3,13 +3,17 @@ import AppKit
 import SwiftUI
 import RadarCore
 
-private struct PreviewClient: RadarFetching {
+private struct PreviewClient: BenchFetching {
     let directory: URL
     func efficiency() async throws -> Efficiency {
-        try RadarJSON.decoder().decode(Efficiency.self, from: Data(contentsOf: directory.appendingPathComponent("efficiency.json")))
+        try RadarJSON.decoder().decode(Efficiency.self, from: Data(contentsOf: directory.appendingPathComponent("bench-preview.json")))
     }
     func history() async throws -> History {
-        try RadarJSON.decoder().decode(History.self, from: Data(contentsOf: directory.appendingPathComponent("history.json")))
+        try RadarJSON.decoder().decode(History.self, from: Data(contentsOf: directory.appendingPathComponent("bench-preview-history.json")))
+    }
+    func bench(model: String?) async throws -> BenchBatch {
+        let catalog = try await efficiency()
+        return BenchBatch(catalog: catalog, model: "gpt-6-astra", points: catalog.points, history: try await history(), failures: [:])
     }
 }
 
@@ -22,6 +26,7 @@ private struct PreviewClient: RadarFetching {
             let output = URL(fileURLWithPath: args[index + 2])
             let suite = "com.local.gptiq.preview.\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!
+            defaults.set("gpt-6-astra@max", forKey: "selectedModel")
             let store = RadarStore(client: PreviewClient(directory: fixtures), cacheURL: nil, defaults: defaults)
             defer { defaults.removePersistentDomain(forName: suite) }
             store.opened()
@@ -34,10 +39,6 @@ private struct PreviewClient: RadarFetching {
                 }
                 if let point = store.points.first(where: { $0.id == "gpt-6-astra@max" }) {
                     try await render(TrendCard(point: point, series: HistoryMath.series(in: store.history, for: point)), name: "trend", appearance: .aqua, output: output)
-                }
-                for harness in [Harness.claudeCode, .dsh, .kiro] {
-                    store.selectHarness(harness)
-                    try await render(PanelView(store: store, quit: {}), name: harness.rawValue, appearance: .aqua, output: output)
                 }
                 exit(0)
             } catch { print(error); exit(1) }

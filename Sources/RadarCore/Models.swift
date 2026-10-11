@@ -3,6 +3,7 @@ import Foundation
 public struct Efficiency: Codable, Sendable {
     public var sourceUpdatedAt: Date?
     public var points: [ModelPoint]
+    public var basis: String?
 
     // Keep ungraded rows: hiding them would make an available harness disappear.
     public var availablePoints: [ModelPoint] {
@@ -25,6 +26,13 @@ public struct ModelPoint: Codable, Identifiable, Sendable {
     public var averageMinutes: Double?
     public var sourceUpdatedAt: Date?
     public var harness: String?
+    public var scoreVersion: String?
+    public var coverage: Int?
+    public var requiredTasks: Int?
+    public var readError: String?
+    public var metricsNote: String?
+    public var isBench: Bool { scoreVersion == "radar-bench-v2-150" }
+    public var scoreLabel: String { isBench ? "雷达分" : "IQ" }
     public var id: String { model + "@" + effort }
     public var harnessKind: Harness { Harness.resolve(model: model, explicit: harness) }
     public var displayName: String {
@@ -42,8 +50,13 @@ public struct ModelPoint: Codable, Identifiable, Sendable {
     public var hasScore: Bool { iq.map { $0.isFinite && (0...150).contains($0) } == true && (total ?? 0) > 0 }
     // A local comparison guard, not a claim of statistical significance or an API flag.
     public static let minimumSamples: Double = 30
-    public var isRankable: Bool { hasScore && (total ?? 0) >= Self.minimumSamples }
+    public var isRankable: Bool { hasScore && readError == nil && (isBench ? Double(coverage ?? 0) : total ?? 0) >= Self.minimumSamples }
     public var qualityNote: String {
+        if let readError { return "读取失败：\(readError)。\(hasScore ? "当前显示上次成功快照。" : "点刷新重试。")" }
+        if isBench {
+            guard hasScore else { return "雷达 Bench 尚无有效成绩；缺失值不当作零分。" }
+            return "雷达 Bench · \(coverage ?? 0)/\(requiredTasks ?? 64) 题 · \(Int(total ?? 0)) 次评测。覆盖不足为暂定分；本 App 仅对覆盖至少 30 题的档位强调最高分。不同档位覆盖的题目可能不同，比较仅供参考。"
+        }
         if !hasScore { return "尚无有效评分；等待更多评测。" }
         if !isRankable { return "仅 \(Int(total ?? 0)) 份样本；本 App 以至少 30 份样本作为参与最高分比较的门槛。原始 IQ：\(String(format: "%.2f", iq!))。" }
         return "\(Int(total ?? 0)) 份评测样本。IQ 为 Codex Radar 评测分数。"
