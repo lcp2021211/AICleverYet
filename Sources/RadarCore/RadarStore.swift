@@ -3,6 +3,7 @@ import Combine
 
 private struct DiskCache: Codable {
     var version: Int?
+    var modelFetchedAt: [String: Date]?
     var efficiency: Efficiency?
     var history: History
     var currentFetchedAt: Date?
@@ -28,6 +29,9 @@ private struct DiskCache: Codable {
     private var task: Task<Void, Never>?
     private var generation = UUID()
     private var lastAttempt: Date?
+    private var modelFetchedAt: [String: Date] = [:]
+    private var applyingBench = false
+    public var usesBench: Bool { client is any BenchFetching }
     public static let currentTTL: TimeInterval = 60
     public static let historyTTL: TimeInterval = 15 * 60
 
@@ -39,11 +43,13 @@ private struct DiskCache: Codable {
         self.now = now
         self.selectedID = defaults.string(forKey: "selectedModel") ?? ""
         if let url = cacheURL, let data = try? Data(contentsOf: url), data.count <= 4 * 1024 * 1024,
-           let cache = try? JSONDecoder().decode(DiskCache.self, from: data) {
+           let cache = try? JSONDecoder().decode(DiskCache.self, from: data),
+           !(client is any BenchFetching) || (cache.version == 3 && cache.efficiency?.basis != nil) {
             snapshot = cache.efficiency
             history = cache.history
             currentFetchedAt = cache.currentFetchedAt
-            historyFetchedAt = cache.version == 2 ? cache.historyFetchedAt : nil
+            historyFetchedAt = cache.version == 2 || cache.version == 3 ? cache.historyFetchedAt : nil
+            modelFetchedAt = cache.modelFetchedAt ?? [:]
         }
         normalizeSelection()
         if selected != nil { defaults.set(selectedID, forKey: "selection.\(selectedHarness.rawValue)") }
@@ -57,7 +63,7 @@ private struct DiskCache: Codable {
 
     public var points: [ModelPoint] { snapshot?.availablePoints ?? [] }
     public var selected: ModelPoint? { points.first { $0.id == selectedID } }
-    public var harnesses: [Harness] { Harness.allCases.filter { h in points.contains { $0.harnessKind == h } } }
+    public var harnesses: [Harness] { Harness.allCases.filter { h in points.contains { $0.harnessKind == h } || (usesBench && [.claudeCode, .dsh].contains(h)) } }
     public var selectedHarness: Harness { selected?.harnessKind ?? .codex }
     public func models(in harness: Harness) -> [String] {
         // Preserve the source's model order; it puts the primary models first.
@@ -80,10 +86,21 @@ private struct DiskCache: Codable {
 
     public func select(_ id: String) {
         guard points.contains(where: { $0.id == id }) else { return }
+        let previousModel = selected?.model
         selectedID = id
         defaults.set(id, forKey: "selectedModel")
         defaults.set(id, forKey: "selection.\(selectedHarness.rawValue)")
         onChange?()
+        if usesBench, !applyingBench, isOpen, previousModel != selected?.model {
+            generation = UUID()
+            task?.cancel()
+            task = nil
+            isLoading = false
+            lastAttempt = nil
+            currentError = nil
+            historyError = nil
+            refresh()
+        }
     }
 
     public func selectHarness(_ harness: Harness) {
@@ -117,6 +134,7 @@ private struct DiskCache: Codable {
 
     public func refresh(force: Bool = false) {
         guard isOpen, !isLoading else { return }
+        if let bench = client as? any BenchFetching { refreshBench(bench, force: force); return }
         let date = now()
         // Manual retries are bounded too; rapid clicks cannot flood the API.
         if let lastAttempt, date.timeIntervalSince(lastAttempt) < 3 { return }
@@ -136,6 +154,58 @@ private struct DiskCache: Codable {
             self.isLoading = false
             self.task = nil
             self.persist()
+            self.onChange?()
+        }
+    }
+
+    private func refreshBench(_ bench: any BenchFetching, force: Bool) {
+        let date = now()
+        let requestedModel = selected?.model ?? selectedID.split(separator: "@").first.map(String.init)
+        if let lastAttempt, date.timeIntervalSince(lastAttempt) < 3 { return }
+        if !force, let model = requestedModel, !expired(modelFetchedAt[model], ttl: Self.currentTTL) { return }
+        lastAttempt = date
+        isLoading = true
+        let token = UUID()
+        generation = token
+        task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let batch = try await bench.bench(model: requestedModel)
+                guard self.generation == token, self.isOpen, !Task.isCancelled else { return }
+                let sameBasis = self.snapshot?.basis == batch.catalog.basis
+                let old = sameBasis ? Dictionary(self.points.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last }) : [:]
+                if !sameBasis { self.history = [:]; self.modelFetchedAt = [:] }
+                let fresh = Dictionary(batch.points.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+                var catalog = batch.catalog
+                catalog.points = catalog.points.map { placeholder in
+                    var point = fresh[placeholder.id] ?? old[placeholder.id] ?? placeholder
+                    if let error = batch.failures[placeholder.id] { point.readError = error }
+                    return point
+                }
+                self.snapshot = catalog
+                let ids = Set(catalog.points.map(\.id))
+                self.history = self.history.filter { ids.contains($0.key) }
+                for (id, series) in batch.history { self.history[id] = series }
+                if batch.failures.isEmpty { self.modelFetchedAt[batch.model] = self.now() }
+                else { self.modelFetchedAt.removeValue(forKey: batch.model) }
+                self.currentFetchedAt = self.modelFetchedAt[batch.model]
+                self.historyFetchedAt = self.currentFetchedAt
+                self.currentError = batch.failures.isEmpty ? nil : "\(batch.failures.count) 个档位读取失败，悬停对应行查看原因"
+                self.historyError = nil
+                self.applyingBench = true
+                if self.selected == nil, let first = catalog.points.first(where: { $0.model == batch.model }) {
+                    self.select(batch.points.filter(\.isRankable).max { ($0.iq ?? 0) < ($1.iq ?? 0) }?.id ?? first.id)
+                }
+                self.normalizeSelection()
+                self.applyingBench = false
+                self.persist()
+            } catch {
+                guard self.generation == token, self.isOpen, !Task.isCancelled else { return }
+                self.currentError = self.friendly(error)
+            }
+            guard self.generation == token, !Task.isCancelled else { return }
+            self.isLoading = false
+            self.task = nil
             self.onChange?()
         }
     }
@@ -185,7 +255,7 @@ private struct DiskCache: Codable {
 
     private func persist() {
         guard let url = cacheURL else { return }
-        let cache = DiskCache(version: 2, efficiency: snapshot, history: history, currentFetchedAt: currentFetchedAt, historyFetchedAt: historyFetchedAt)
+        let cache = DiskCache(version: usesBench ? 3 : 2, modelFetchedAt: usesBench ? modelFetchedAt : nil, efficiency: snapshot, history: history, currentFetchedAt: currentFetchedAt, historyFetchedAt: historyFetchedAt)
         do {
             let data = try JSONEncoder().encode(cache)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

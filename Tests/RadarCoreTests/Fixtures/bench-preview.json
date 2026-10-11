@@ -1,0 +1,83 @@
+{
+  "basis": "radar-bench-final64-20261004:dradar-four-library-deployment007-server024-20261004-config64:f75ff09b6117cd83d3ab6ea744fe379ac117676c042538d5df5e38489af27bc4",
+  "points": [
+    {
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "iq": 98.85919057794058,
+      "total": 48,
+      "score_version": "radar-bench-v2-150",
+      "coverage": 48,
+      "required_tasks": 64,
+      "harness": "codex",
+      "average_minutes": 9.099256597222222,
+      "average_price_usd": 2.4748900833333334,
+      "metrics_note": "已知样本均值；成本为 API 等价，非订阅实扣。"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "iq": 90.08207841541176,
+      "total": 72,
+      "score_version": "radar-bench-v2-150",
+      "coverage": 54,
+      "required_tasks": 64,
+      "harness": "codex",
+      "average_minutes": 9.212524305555556,
+      "average_price_usd": 2.2901241666666667,
+      "metrics_note": "已知样本均值；成本为 API 等价，非订阅实扣。"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "iq": 111.97304941062372,
+      "total": 58,
+      "score_version": "radar-bench-v2-150",
+      "coverage": 58,
+      "required_tasks": 64,
+      "harness": "codex",
+      "average_minutes": 10.35577183908046,
+      "average_price_usd": 2.3830517931034483,
+      "metrics_note": "已知样本均值；成本为 API 等价，非订阅实扣。"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "xhigh",
+      "iq": 121.12650175007094,
+      "total": 62,
+      "score_version": "radar-bench-v2-150",
+      "coverage": 62,
+      "required_tasks": 64,
+      "harness": "codex",
+      "average_minutes": 13.224122849462365,
+      "average_price_usd": 3.34928435483871,
+      "metrics_note": "已知样本均值；成本为 API 等价，非订阅实扣。"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "max",
+      "iq": 113.67307692307693,
+      "total": 63,
+      "score_version": "radar-bench-v2-150",
+      "coverage": 63,
+      "required_tasks": 64,
+      "harness": "codex",
+      "average_minutes": 16.876103174603177,
+      "average_price_usd": 4.302995936507937,
+      "metrics_note": "已知样本均值；成本为 API 等价，非订阅实扣。"
+    },
+    {
+      "model": "gpt-6-astra",
+      "effort": "ultra",
+      "iq": 111.64641630671774,
+      "total": 63,
+      "score_version": "radar-bench-v2-150",
+      "coverage": 63,
+      "required_tasks": 64,
+      "harness": "codex",
+      "average_minutes": 10.13765052910053,
+      "average_price_usd": 9.332537967741935,
+      "metrics_note": "已知样本均值；成本为 API 等价，非订阅实扣。"
+    }
+  ]
+}

@@ -18,7 +18,7 @@ struct PanelView: View {
                 comparison(point)
             } else { emptyState }
             if let error = store.currentError {
-                Label(store.snapshot == nil ? error : "离线快照 · \(error)", systemImage: "wifi.slash")
+                Label(store.usesBench ? error : store.snapshot == nil ? error : "离线快照 · \(error)", systemImage: "wifi.slash")
                     .font(.system(size: 10)).foregroundStyle(.orange).frame(maxWidth: .infinity, alignment: .leading)
             }
             footer
@@ -66,7 +66,7 @@ struct PanelView: View {
                 Spacer()
                 Menu {
                     ForEach(store.harnesses) { h in
-                        Button(h.title) { store.selectHarness(h) }
+                        Button(h.title) { store.selectHarness(h) }.disabled(store.models(in: h).isEmpty)
                     }
                 } label: {
                     Text("全部 \(store.harnesses.count)").font(.system(size: 9, weight: .medium))
@@ -98,19 +98,20 @@ struct PanelView: View {
         } label: {
             Image(systemName: direction < 0 ? "chevron.left" : "chevron.right")
                 .font(.system(size: 9, weight: .bold)).frame(width: 18, height: 18)
-        }.buttonStyle(.plain).disabled(!store.harnesses.indices.contains(next))
+        }.buttonStyle(.plain).disabled(!store.harnesses.indices.contains(next) || (store.harnesses.indices.contains(next) && store.models(in: store.harnesses[next]).isEmpty))
             .accessibilityLabel(direction < 0 ? "上一个 harness" : "下一个 harness")
     }
 
     private func harnessCard(_ harness: Harness) -> some View {
         let active = store.selectedHarness == harness
+        let available = !store.models(in: harness).isEmpty
         return Button { store.selectHarness(harness) } label: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Image(systemName: harness.symbol).font(.system(size: 16, weight: .medium))
                     Spacer()
                     if active { Image(systemName: "checkmark.circle.fill").font(.system(size: 11)) }
-                    else { Text(String(format: "%02d", store.models(in: harness).count)).font(.system(size: 9, weight: .medium, design: .monospaced)).opacity(0.5) }
+                    else { Text(available ? String(format: "%02d", store.models(in: harness).count) : "暂未提供").font(.system(size: 9, weight: .medium, design: .monospaced)).opacity(0.5) }
                 }
                 Text(harness.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
             }
@@ -127,6 +128,7 @@ struct PanelView: View {
             .contentShape(RoundedRectangle(cornerRadius: 15))
         }
         .buttonStyle(.plain)
+        .disabled(!available).help(available ? harness.title : "新雷达 Bench 接口暂未提供该 harness；旧 IQ 不与新分数混合。")
         .accessibilityLabel("\(harness.title)，\(store.models(in: harness).count) 个模型\(active ? "，已选择" : "")")
     }
 
@@ -154,7 +156,7 @@ struct PanelView: View {
             }
             HStack(spacing: 0) {
                 Text("推理强度").frame(maxWidth: .infinity, alignment: .leading)
-                Text("IQ").frame(width: 103, alignment: .trailing)
+                Text(point.scoreLabel).frame(width: 103, alignment: .trailing)
                 Text("耗时 / 分").frame(width: 65, alignment: .trailing)
                 Text("成本 / $").frame(width: 60, alignment: .trailing)
                 Text("趋势").frame(width: 38, alignment: .trailing)
@@ -164,7 +166,7 @@ struct PanelView: View {
                     ForEach(store.efforts) { option in
                         EffortRow(point: option, best: option.isRankable && option.iq == store.bestEffort?.iq,
                                   series: HistoryMath.series(in: store.history, for: option),
-                                  loading: store.isLoading, historyError: store.historyError, panelOpen: store.isOpen)
+                                  loading: store.isLoading, historyError: option.readError ?? store.historyError, panelOpen: store.isOpen)
                     }
                 }
             }.frame(height: CGFloat(min(store.efforts.count, 6)) * 49 - 5)
@@ -172,7 +174,11 @@ struct PanelView: View {
                 Image(systemName: store.bestEffort == nil ? "hourglass" : "sparkle").foregroundStyle(accent)
                 Text(store.bestEffort == nil ? "样本还在路上，先让评测再跑一会儿。" : "更用力，不一定更聪明。蓝色标出本组最高分。")
             }.font(.system(size: 9)).foregroundStyle(ink.opacity(0.5))
-                .help("最高分比较仅包含至少 30 份样本的档位；这是本 App 的比较门槛。成本为数据源给出的每次评测参考成本。")
+                .help(point.isBench ? "覆盖至少 30 题的档位参与比较；覆盖题目可能不同，暂定分仅供参考。成本为 API 等价均值，非订阅实扣。" : "最高分比较仅包含至少 30 份样本的档位。")
+            if point.isBench {
+                Text("雷达 Bench · 满分 150 · 新旧 IQ 不可直接比较")
+                    .font(.system(size: 9)).foregroundStyle(ink.opacity(0.45))
+            }
         }
     }
 
@@ -237,20 +243,23 @@ private struct EffortRow: View {
                 RoundedRectangle(cornerRadius: 2).fill(best ? accent : accent.opacity(0.15)).frame(width: 3, height: 19)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(point.effortName).font(.system(size: 11, weight: best ? .bold : .medium, design: .monospaced))
-                    if best { Text("本组最高").font(.system(size: 8, weight: .semibold)) }
+                    if point.isBench {
+                        Text(point.readError != nil ? "离线快照" : point.coverage.map { "\($0)/\(point.requiredTasks ?? 64) 题" + ($0 < (point.requiredTasks ?? 64) ? " · 暂定" : "") } ?? "雷达 Bench")
+                            .font(.system(size: 8, weight: best ? .semibold : .regular))
+                    } else if best { Text("本组最高").font(.system(size: 8, weight: .semibold)) }
                 }
             }.foregroundStyle(best ? accent : Color.primary.opacity(0.75)).frame(maxWidth: .infinity, alignment: .leading)
             Group {
-                if point.isRankable {
+                if point.isRankable || (point.isBench && point.hasScore) {
                     Text(String(format: "%.2f", point.iq!))
                         .font(.system(size: 22, weight: best ? .bold : .medium, design: .rounded)).tracking(-0.6)
                         .foregroundStyle(best ? accent : Color.primary.opacity(0.8))
                 } else {
-                    Text("数据不足").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                    Text(point.readError != nil ? "读取失败" : point.isBench ? (loading ? "读取中" : point.coverage == nil ? "待加载" : "待测") : "数据不足").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                 }
             }.frame(width: 103, alignment: .trailing).help(point.qualityNote)
-            Text(point.averageMinutes.map { String(format: "%.1f", $0) } ?? "—").frame(width: 65, alignment: .trailing)
-            Text(point.averagePriceUsd.map { String(format: "%.2f", $0) } ?? "—").frame(width: 60, alignment: .trailing)
+            Text(point.averageMinutes.map { String(format: "%.1f", $0) } ?? "—").frame(width: 65, alignment: .trailing).help(point.metricsNote ?? point.qualityNote)
+            Text(point.averagePriceUsd.map { String(format: "%.2f", $0) } ?? "—").frame(width: 60, alignment: .trailing).help(point.metricsNote ?? point.qualityNote)
             TrendTrigger(point: point, series: series, loading: loading, error: historyError, panelOpen: panelOpen)
                 .frame(width: 38, alignment: .trailing)
         }

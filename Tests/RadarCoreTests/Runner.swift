@@ -34,6 +34,8 @@ func unwrap<T>(_ a: T?) throws -> T {
     @MainActor static func main() async {
         let checks = RadarChecks()
         var cases: [(String, () async throws -> Void)] = [
+            ("Bench API / bounded requests / partial failure / schema validation", { try await checks.testBenchTransport() }),
+            ("Bench store / model cache / cancellation / old IQ isolation", { try await checks.testBenchStore() }),
             ("Real JSON / exact effort history", { try checks.testRealPayloadAndExactEffortHistory() }),
             ("Delta timestamps / sparse history", { checks.testHistoryDeltaUsesTimestampAndRequiresCoverage() }),
             ("No startup traffic / deduplication / independent TTLs", { try await checks.testNoStartupOrClosedRequestsAndIndependentTTLs() }),

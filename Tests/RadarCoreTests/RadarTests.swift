@@ -191,15 +191,14 @@ private actor StubClient: RadarFetching {
     func testLiveAPIWhenRequested() async throws {
         guard ProcessInfo.processInfo.environment["GPT_IQ_LIVE_TEST"] == "1" else { print("SKIP Live API (set GPT_IQ_LIVE_TEST=1 to enable)"); return }
         let client = RadarClient()
-        async let current = client.efficiency()
-        async let history = client.history()
-        let (result, past) = try await (current, history)
-        expectFalse(result.availablePoints.isEmpty)
-        expectTrue(past.keys.allSatisfy { !$0.hasPrefix("latest:") && $0.contains("@") })
-        expectTrue(result.availablePoints.contains { $0.harnessKind == .claudeCode })
-        expectTrue(result.availablePoints.contains { $0.harnessKind == .dsh })
-        expectTrue(past.keys.contains { $0.hasPrefix("dsh-") })
-        expectTrue(result.gptPoints.contains { !HistoryMath.series(in: past, for: $0).isEmpty })
+        let result = try await client.bench(model: "gpt-6-astra")
+        expectEqual(result.model, "gpt-6-astra")
+        expectEqual(result.points.count, 6)
+        expectTrue(result.failures.isEmpty)
+        expectTrue(result.points.allSatisfy { $0.isBench && $0.model == result.model })
+        expectTrue(result.points.contains { $0.hasScore })
+        expectTrue(result.catalog.points.allSatisfy { $0.harnessKind == .codex })
+        print("Live: \(result.points.count) efforts; history \(result.history.values.reduce(0) { $0 + $1.count }) daily points")
     }
 
     func testHarnessMappingAndInsufficientSamples() throws {
